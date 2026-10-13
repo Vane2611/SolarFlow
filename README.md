@@ -1,4 +1,4 @@
-# SolarFlow — AIoT Smart Greenhouse Farming System
+# SolarFlow — Smart Greenhouse Farming System
 
 **SolarFlow** is an Artificial Intelligence of Things (AIoT) project powered by solar that aims to predict changes in greenhouse environmental conditions and proactively control the growing environment before conditions become unfavorable for crops.
 
