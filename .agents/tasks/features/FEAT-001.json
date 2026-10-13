@@ -1,0 +1,40 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Backend foundation: FastAPI application skeleton with SQLite database, SQLAlchemy models, Pydantic schemas, all API routers, simulated sensor data generator, and APScheduler background task that continuously produces readings. This is the first feature; all others depend on it being complete.",
+  "status": "completed",
+  "steps": [
+    "Create backend/requirements.txt listing: fastapi>=0.111, uvicorn[standard]>=0.29, sqlalchemy>=2.0, pydantic>=2.7, pydantic-settings>=2.2, apscheduler>=3.10, pandas>=2.0, scikit-learn>=1.4, numpy>=1.26, pyserial>=3.5, python-dotenv>=1.0, pytest>=8.0, httpx>=0.27",
+    "Create backend/.env.example with: DATABASE_URL=sqlite:///./solarflow.db, SIMULATION_MODE=true, SIMULATION_INTERVAL_SECONDS=5, GREENHOUSE_ID=greenhouse-01, LOG_LEVEL=info",
+    "Create backend/app/__init__.py (empty), backend/app/routers/__init__.py (empty), backend/app/services/__init__.py (empty), backend/app/tests/__init__.py (empty)",
+    "Create backend/app/config.py using pydantic-settings BaseSettings: fields DATABASE_URL, SIMULATION_MODE (bool), SIMULATION_INTERVAL_SECONDS (int=5), GREENHOUSE_ID (str), LOG_LEVEL (str). Export a singleton `settings` instance.",
+    "Create backend/app/database.py: SQLAlchemy engine (connect_args={check_same_thread:False} for SQLite), SessionLocal factory, Base declarative base, get_db() dependency, create_all() function.",
+    "Create backend/app/models.py with SQLAlchemy ORM models: SensorReading (id, greenhouse_id, timestamp, temperature_c, humidity_pct, data_source enum[real|simulated], created_at), ForecastRecord (id, greenhouse_id, created_at, horizon_minutes, predicted_temperature_c, predicted_humidity_pct, model_version, is_validated), Alert (id, greenhouse_id, created_at, resolved_at, risk_level enum[low|medium|high|critical], alert_type, message, is_active), ControlState (id, greenhouse_id, updated_at, mode enum[reactive|predictive|manual], fan_on bool, manual_override bool, override_expires_at, recommended_action, action_reason), AnalyticsSnapshot (id, greenhouse_id, captured_at, mode, fan_runtime_seconds, temp_exceedance_seconds, humidity_exceedance_seconds, avg_response_time_seconds).",
+    "Create backend/app/schemas.py with Pydantic v2 models mirroring every ORM model plus request bodies: SensorReadingOut, ForecastRecordOut, AlertOut, ControlStateOut, ControlModeRequest (mode: Literal['reactive','predictive','manual']), ManualOverrideRequest (action: Literal['fan_on','fan_off','noop'], duration_seconds: int = 300), AnalyticsSnapshotOut, HealthResponse, PredictionsResponse (includes forecasts list + model_metrics dict + data_is_synthetic bool).",
+    "Create backend/app/services/simulator.py: class GreenhouseSimulator with internal state (base_temp, base_humidity, time_of_day drift). Method next_reading() returns a SensorReading ORM instance with data_source='simulated'. Simulate realistic diurnal temperature variation (sinusoidal, ~22-38°C), humidity anticorrelated with temperature, occasional spikes. No random seed — use time-based drift so readings evolve naturally.",
+    "Create backend/app/routers/readings.py: GET /api/readings/latest (returns most recent SensorReading), GET /api/readings/history?limit=200&greenhouse_id= (returns list ordered by timestamp desc).",
+    "Create backend/app/routers/predictions.py: GET /api/predictions?greenhouse_id= — returns PredictionsResponse with forecasts for horizons [10,15,30] minutes, current model metrics (MAE/RMSE per horizon), and data_is_synthetic flag.",
+    "Create backend/app/routers/alerts.py: GET /api/alerts?active_only=true&limit=50 — returns list of AlertOut ordered by created_at desc.",
+    "Create backend/app/routers/control.py: GET /api/control/mode (returns ControlStateOut), POST /api/control/mode (body: ControlModeRequest, updates mode), POST /api/control/manual-override (body: ManualOverrideRequest, validates action is in ['fan_on','fan_off','noop'] — reject any other value with 422).",
+    "Create backend/app/routers/analytics.py: GET /api/analytics/comparison?greenhouse_id=&hours=24 — returns reactive vs predictive stats from AnalyticsSnapshot rows.",
+    "Create backend/app/routers/devices.py: GET /api/devices/status — returns connection status, last_reading_at, simulation_mode flag, serial_port (null if not connected), last_error.",
+    "Create backend/main.py: create FastAPI app, include all routers with prefix /api, add CORS middleware (allow all origins for dev), on startup call create_all() and start APScheduler: one job every SIMULATION_INTERVAL_SECONDS that calls simulator.next_reading(), writes to DB, then calls alert_engine and control_engine. Add GET /api/health returning {status: 'ok', version: '1.0.0', simulation_mode: bool}.",
+    "Install backend dependencies: run `cd backend && pip install -r requirements.txt` (use subprocess or note this must be done before starting)."
+  ],
+  "acceptance_criteria": [
+    "GET /api/health returns HTTP 200 with {\"status\": \"ok\"}",
+    "GET /api/readings/latest returns a SensorReading with temperature_c and humidity_pct populated",
+    "GET /api/readings/history returns a list of readings",
+    "POST /api/control/manual-override with action='fan_on' returns 200; with action='arbitrary_command' returns 422",
+    "All imports resolve without errors when `python -c 'from app.routers import readings'` is run from the backend/ directory",
+    "`cd backend && pytest app/tests/ -v` — any stub tests pass (full tests added in FEAT-005)"
+  ],
+  "verification": [
+    "cd backend && pip install -r requirements.txt",
+    "cd backend && python -c \"from app.database import create_all; create_all(); print('DB OK')\"",
+    "cd backend && python -c \"from app.routers import readings, predictions, alerts, control, analytics, devices; print('routers OK')\"",
+    "cd backend && uvicorn main:app --port 8000 --timeout-keep-alive 5 & sleep 3 && curl http://localhost:8000/api/health (or equivalent PowerShell Invoke-RestMethod)"
+  ],
+  "blocked_reason": null,
+  "findings": "FastAPI 0.143 installed (latest); on_event startup hook is deprecated — migrated to lifespan context manager before commit. SQLAlchemy 2.1.4 installed with Mapped/mapped_column typed ORM style. APScheduler 3.11.3 uses BackgroundScheduler with daemon=True. starlette.testclient deprecation warning appears when using httpx with TestClient — harmless for tests but later FEATs should add httpx2 or use anyio-based async client if needed. Hardware interface is a stub singleton in app/services/hardware.py — FEAT-004 should replace it with a real serial connection. Forecasting service returns persistence baseline only (model_version='persistence-v1'); FEAT-002 adds the RF training pipeline. Control engine predictive path falls back to reactive until FEAT-003. All DB tables created via create_all() at startup. No .env file committed — .env.example provided."
+}

@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Arduino firmware, hardware protocol documentation, backend unit tests, and project README. Depends on FEAT-001/002/003 being complete (tests import backend modules). Independent of FEAT-004.",
+  "status": "pending",
+  "steps": [
+    "Create firmware/solarflow_sensor/solarflow_sensor.ino: Arduino sketch that (a) reads DHT22 on pin 2 every 5 seconds using the DHT library, (b) controls a relay on pin 7 (HIGH=fan on, LOW=fan off), (c) sends JSON readings over Serial at 9600 baud: {\"type\":\"reading\",\"temp\":25.4,\"humidity\":68.2,\"ts\":12345} where ts is millis(), (d) listens for JSON commands on Serial: {\"cmd\":\"fan_on\"} / {\"cmd\":\"fan_off\"} / {\"cmd\":\"noop\"}, (e) responds with {\"type\":\"ack\",\"cmd\":\"fan_on\",\"ok\":true}, (f) on DHT22 read failure sends {\"type\":\"error\",\"code\":\"sensor_fail\"}, (g) includes #define constants for all pin numbers and intervals, (h) uses a watchdog pattern — if no valid command received in 60s, stays in last known state (does not reset fan). Includes comments explaining each section.",
+    "Create firmware/PROTOCOL.md: documents the serial communication protocol — baud rate, JSON message schemas for readings, commands, acks, and errors; startup sequence; error codes; wiring diagram (ASCII art) for DHT22 + relay + fan circuit with component values; notes on 5V relay module compatibility; safety notes (flyback diode, fan power supply rating).",
+    "Create backend/app/tests/test_forecasting.py: pytest tests covering: (a) generate_synthetic_training_data returns DataFrame with correct columns and length, (b) build_feature_matrix produces correct number of lag columns, (c) train_models returns metrics dict with 'random_forest' and 'persistence' keys for each horizon, (d) MAE and RMSE values are finite positive floats, (e) chronological split is respected (no future data in training set — check that train timestamps all precede test timestamps), (f) ForecastingService.predict() returns ForecastRecord list with is_validated=False.",
+    "Create backend/app/tests/test_control.py: pytest tests covering: (a) ControlEngine reactive mode: when temp >= temp_max_c, tick() returns fan_on=True with reason containing 'Reactive', (b) reactive hysteresis: when temp < temp_max_c - hysteresis, tick() returns fan_on=False, (c) predictive mode: when forecast predicts temp > temp_warn_c - 1, fan activates early, (d) manual override: when manual_override=True and not expired, tick() preserves fan state regardless of temperature, (e) command allowlist: hardware.send_command('bad_command') raises ValueError, (f) fallback: predictive mode with empty forecasts falls back to reactive.",
+    "Create backend/app/tests/test_api.py: pytest tests using httpx.AsyncClient and FastAPI TestClient covering: (a) GET /api/health returns 200 with status='ok', (b) GET /api/readings/latest returns 200 (may be null if no readings yet — test both empty and populated states), (c) POST /api/control/mode with valid mode returns 200, (d) POST /api/control/mode with invalid mode returns 422, (e) POST /api/control/manual-override with action='fan_on' returns 200, (f) POST /api/control/manual-override with action='rm -rf /' returns 422, (g) GET /api/predictions returns 200 with correct schema.",
+    "Overwrite README.md at workspace root with full documentation: project overview, architecture diagram (ASCII), prerequisites (Python 3.11, Node 18+, optionally Arduino IDE), setup instructions (clone, backend install, frontend install, env vars), how to run (backend uvicorn command, frontend npm run dev), API endpoint reference table (method, path, description, example response shape), ML model section (what models, what features, how metrics are computed, why data is labelled synthetic), control logic explanation (reactive vs predictive, fallback behaviour), hardware wiring instructions (reference firmware/PROTOCOL.md), known limitations, testing instructions (`cd backend && pytest app/tests/ -v`), and contributors."
+  ],
+  "acceptance_criteria": [
+    "`cd backend && pytest app/tests/ -v` — all tests in test_forecasting.py, test_control.py, test_api.py pass",
+    "firmware/solarflow_sensor/solarflow_sensor.ino compiles without errors in Arduino IDE (or avr-gcc if available)",
+    "firmware/PROTOCOL.md documents all JSON message types with schema",
+    "README.md at workspace root contains setup, run, API reference, ML explanation, and hardware sections"
+  ],
+  "verification": [
+    "cd backend && pytest app/tests/ -v --tb=short"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -1,0 +1,7 @@
+{
+  "task_id": "task-solarflow-mvp",
+  "task_description": "Build SolarFlow: an AI-powered predictive greenhouse management system hackathon MVP. Includes FastAPI backend with SQLite + scikit-learn forecasting, React/Vite/TypeScript dashboard with 7 pages, Arduino firmware, unit tests, and README.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

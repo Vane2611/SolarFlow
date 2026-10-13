@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Control engine, alert engine, and hardware interface: reactive and predictive control modes, crop-specific threshold config, alert generation, hardware command allowlist enforcement, and safe fallback. Depends on FEAT-001 (models/schemas). Independent of FEAT-002 — control engine accesses forecast records from DB, not directly from ForecastingService.",
+  "status": "pending",
+  "steps": [
+    "Create backend/app/services/alert_engine.py: class `AlertEngine` with method `evaluate(reading: SensorReading, forecasts: list[ForecastRecord], crop_config: dict) -> list[Alert]`. Crop config contains temp_max_c (default 32), temp_warn_c (default 30), humidity_max_pct (default 85), humidity_min_pct (default 50). Generates Alert rows for: current temp > temp_warn_c (medium), current temp > temp_max_c (high), predicted temp > temp_max_c within 30 min (high, type='predicted_overheat'), current humidity out of range (medium), predicted humidity > max within 30 min (medium). Each alert has a human-readable message. Deduplicates against active alerts already in DB (does not create a duplicate if same type is already active). Module-level `alert_engine` singleton.",
+    "Create backend/app/services/hardware.py: ALLOWED_COMMANDS = frozenset(['fan_on', 'fan_off', 'noop']). class `HardwareInterface` with: `send_command(command: str) -> dict` — raises ValueError if command not in ALLOWED_COMMANDS; in simulation mode logs the command and returns {success: True, simulated: True, command: command}; in real mode opens serial port (configurable COM port / baud 9600), sends JSON line '{\"cmd\": command}\\n', reads one-line JSON response, returns parsed response. `is_connected() -> bool`. `get_status() -> dict` with keys: connected, simulation_mode, last_command, last_command_at, last_error. Module-level `hardware_interface` singleton. Never pass raw user input to the serial port — only allowlisted command strings.",
+    "Create backend/app/services/control_engine.py: class `ControlEngine`. Holds current ControlState (loaded from DB on init, or created with defaults: mode=reactive, fan_on=False). Method `tick(reading: SensorReading, forecasts: list[ForecastRecord], current_state: ControlState, crop_config: dict) -> tuple[ControlState, str]`: (a) Reactive mode: fan ON if reading.temperature_c >= crop_config['temp_max_c'], fan OFF if reading.temperature_c < crop_config['temp_max_c'] - crop_config.get('hysteresis_c', 2.0). Action reason = 'Reactive: temperature {t}°C >= threshold {max}°C'. (b) Predictive mode: look at forecasts for horizon 10 and 15 min; if any predicted_temperature_c > temp_warn_c - 1 and current temp > temp_warn_c - 3, activate fan early. Action reason must explain which forecast triggered it and at which horizon. Does NOT assume fan reduces humidity — reason text notes 'outdoor conditions unknown'. (c) Manual override: if ControlState.manual_override=True and not expired, respect manual fan state, do not change it. (d) Fallback: if no forecasts available and mode=predictive, fall back to reactive logic and set action_reason='Predictive fallback to reactive: no forecast available'. (e) Enforces minimum fan run time of 120 seconds and minimum fan off time of 60 seconds to prevent rapid cycling. (f) Calls hardware_interface.send_command('fan_on'|'fan_off'|'noop'). Returns updated ControlState and reason string. Module-level `control_engine` singleton.",
+    "Wire alert_engine and control_engine into the APScheduler job in main.py (backend/main.py): after writing the SensorReading, fetch latest forecasts from DB, call alert_engine.evaluate(), persist new Alert rows, call control_engine.tick(), persist updated ControlState, update AnalyticsSnapshot.",
+    "Update backend/app/routers/devices.py to call hardware_interface.get_status() and return it.",
+    "Update backend/app/routers/control.py POST /api/control/manual-override to call hardware_interface.send_command() with the validated action string after updating ControlState in DB.",
+    "Add crop configuration to config.py: TEMP_MAX_C=32.0, TEMP_WARN_C=30.0, HUMIDITY_MAX_PCT=85.0, HUMIDITY_MIN_PCT=50.0, HYSTERESIS_C=2.0, MIN_FAN_RUN_SECONDS=120, MIN_FAN_OFF_SECONDS=60."
+  ],
+  "acceptance_criteria": [
+    "POST /api/control/manual-override with {\"action\": \"fan_on\", \"duration_seconds\": 60} returns 200 and fan status updates",
+    "POST /api/control/manual-override with {\"action\": \"dangerous_command\"} returns 422",
+    "GET /api/control/mode returns current mode and fan_on state",
+    "GET /api/devices/status returns connected, simulation_mode, and last_command fields",
+    "GET /api/alerts returns alert list; after simulated high-temp reading, a high-risk alert appears",
+    "`cd backend && pytest app/tests/test_control.py -v` passes"
+  ],
+  "verification": [
+    "cd backend && python -c \"from app.services.control_engine import ControlEngine; print('control_engine OK')\"",
+    "cd backend && python -c \"from app.services.alert_engine import AlertEngine; print('alert_engine OK')\"",
+    "cd backend && python -c \"from app.services.hardware import HardwareInterface, ALLOWED_COMMANDS; h=HardwareInterface(); r=h.send_command('fan_on'); print(r)\"",
+    "cd backend && pytest app/tests/test_control.py -v"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

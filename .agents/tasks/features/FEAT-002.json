@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "ML forecasting module: synthetic training data generator, persistence baseline model, Random Forest regression forecaster, chronological train/test split, MAE/RMSE metrics per horizon, and the ForecastingService class used by the predictions router. Depends on FEAT-001 (database models and schemas must exist). Independent of FEAT-003.",
+  "status": "pending",
+  "steps": [
+    "Create backend/app/services/forecasting.py with the following: (a) `generate_synthetic_training_data(n_hours=72) -> pd.DataFrame` — produces a DataFrame with columns [timestamp, temperature_c, humidity_pct] using sinusoidal diurnal patterns with realistic noise; clearly documents that data is synthetic and unvalidated. (b) `build_feature_matrix(df: pd.DataFrame, horizon_minutes: int) -> tuple[pd.DataFrame, pd.Series, pd.Series]` — adds lag features (1,2,3,6,12 readings back), rolling mean and std over 6 and 12 windows, hour_of_day, and creates target columns shifted by horizon steps; returns X, y_temp, y_humidity. (c) `train_models(df: pd.DataFrame) -> dict` — for each horizon in [10,15,30]: splits df chronologically (80/20, no shuffle), trains a persistence baseline (predict last known value) and a RandomForestRegressor(n_estimators=100, random_state=42), computes MAE and RMSE on test split for both models, stores results. Returns model_store dict keyed by horizon. (d) class `ForecastingService` — singleton, lazily trains on first use (on synthetic data if fewer than 50 real readings exist), exposes `predict(recent_readings: list[SensorReading], horizons: list[int]) -> list[ForecastRecord]` method, and `get_metrics() -> dict` returning per-horizon MAE/RMSE for both baseline and RF. Marks all predictions with is_validated=False when trained on synthetic data. (e) Module-level `forecasting_service` singleton instance.",
+    "Wire the ForecastingService into the predictions router (backend/app/routers/predictions.py): call forecasting_service.predict() with the last 60 readings retrieved from DB, return ForecastRecord list plus metrics plus data_is_synthetic=True flag in PredictionsResponse.",
+    "Wire ForecastingService into main.py startup: after DB init, call forecasting_service.train() in a background thread so it does not block server start.",
+    "Add the forecast records produced by predict() to the DB in the APScheduler job in main.py (write ForecastRecord rows after each sensor reading)."
+  ],
+  "acceptance_criteria": [
+    "GET /api/predictions returns HTTP 200 with a forecasts list containing entries for horizons 10, 15, and 30",
+    "Each forecast entry has predicted_temperature_c and predicted_humidity_pct as floats",
+    "Response includes model_metrics with MAE and RMSE for each horizon for both baseline and random_forest",
+    "Response includes data_is_synthetic: true",
+    "Metrics are real computed numbers — not fabricated. They may be poor on synthetic data; that is acceptable and expected.",
+    "`cd backend && pytest app/tests/test_forecasting.py -v` passes"
+  ],
+  "verification": [
+    "cd backend && python -c \"from app.services.forecasting import ForecastingService; fs = ForecastingService(); fs.train(); m = fs.get_metrics(); print(m)\"",
+    "cd backend && pytest app/tests/test_forecasting.py -v"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

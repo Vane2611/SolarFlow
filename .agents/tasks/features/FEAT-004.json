@@ -1,0 +1,46 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "React/Vite/TypeScript frontend: full SPA with 7 pages (Overview, Monitoring, Predictions, Alerts, Automation, Analytics, DeviceHealth), layout components (Sidebar, Header), all domain components, typed API client, polling hook, and Recharts charts with threshold lines. Depends on FEAT-001/002/003 being complete so the API is fully functional. The frontend is independent in that it can be built and statically verified without a running backend — the Vite build only needs TypeScript to compile.",
+  "status": "pending",
+  "steps": [
+    "Scaffold frontend with Vite: `cd c:\\Users\\ADMIN\\SolarFlow && npm create vite@latest frontend -- --template react-ts` (answer prompts non-interactively by passing flags), then `cd frontend && npm install`. If the directory already exists, skip scaffold and only run npm install.",
+    "Add dependencies to frontend/package.json and install: recharts@^2.12, react-router-dom@^6.23, @types/react-router-dom (if needed), lucide-react@^0.395. Run `npm install recharts react-router-dom lucide-react` from frontend/.",
+    "Update frontend/tsconfig.json: ensure strict:true, noImplicitAny:true, target ES2020, moduleResolution bundler.",
+    "Create frontend/src/types/index.ts: export all TypeScript interfaces matching backend Pydantic schemas — SensorReading, ForecastRecord, Alert, ControlState, ControlModeRequest, ManualOverrideRequest, AnalyticsSnapshot, HealthResponse, PredictionsResponse, DeviceStatus. Use string literal union types (e.g. data_source: 'real' | 'simulated'). No `any` types.",
+    "Create frontend/src/api/client.ts: base URL from import.meta.env.VITE_API_URL ?? 'http://localhost:8000'. Functions: getHealth(), getLatestReading(), getReadingHistory(limit?), getPredictions(), getAlerts(activeOnly?), getDeviceStatus(), getControlMode(), setControlMode(req: ControlModeRequest), sendManualOverride(req: ManualOverrideRequest), getAnalyticsComparison(hours?). Each function uses fetch(), checks response.ok, returns typed response. No `any` in return types.",
+    "Create frontend/src/hooks/usePolling.ts: generic hook `usePolling<T>(fetcher: () => Promise<T>, intervalMs: number): { data: T | null; error: string | null; loading: boolean; lastUpdated: Date | null }`. Uses setInterval, clears on unmount, handles errors gracefully.",
+    "Create frontend/src/index.css: agricultural tech color scheme — deep green (#1a4731) sidebar, white content area, amber (#f59e0b) warning, red (#dc2626) critical, blue (#2563eb) info, neutral grays. Full reset + responsive base styles. Mobile-first.",
+    "Create frontend/src/components/layout/Sidebar.tsx: vertical nav with links to all 7 pages using react-router-dom NavLink. Shows active state. Collapses to icon-only on mobile. Uses lucide-react icons for each section.",
+    "Create frontend/src/components/layout/Header.tsx: displays page title, last-update timestamp, simulation mode badge (amber 'SIMULATED DATA' label when simulation_mode=true), and connection status indicator.",
+    "Create frontend/src/components/overview/CurrentConditions.tsx: displays current temperature (large number with °C), humidity (%), data_source badge ('SIMULATED' or 'LIVE'). Color-codes temperature: green <28°C, amber 28-30°C, red >30°C.",
+    "Create frontend/src/components/overview/ForecastRisk.tsx: shows risk summary from latest predictions — highest risk horizon, predicted peak temp, time to predicted risk. If data_is_synthetic=true, shows 'UNVALIDATED MODEL' badge.",
+    "Create frontend/src/components/overview/TopAlert.tsx: shows the highest-priority active alert with risk_level badge and message. Shows 'No active alerts' if none.",
+    "Create frontend/src/components/monitoring/LiveChart.tsx: Recharts LineChart of last N readings, dual Y-axes (temperature left, humidity right), reference lines at TEMP_WARN (30°C, amber) and TEMP_MAX (32°C, red) thresholds. X-axis shows time. Tooltip shows both values. Responsive container.",
+    "Create frontend/src/components/predictions/ForecastChart.tsx: Recharts ComposedChart showing historical actual readings plus forecast points at 10, 15, 30 min horizons. Reference lines for temp_max and humidity_max. Clearly differentiates actual vs predicted using different stroke styles. Label 'SYNTHETIC / UNVALIDATED' if data_is_synthetic. Shows per-horizon MAE/RMSE in a small table below chart.",
+    "Create frontend/src/components/alerts/AlertList.tsx: renders list of AlertOut items as cards with risk_level color coding (low=blue, medium=amber, high=red, critical=dark red), type, message, timestamp, and resolved_at if present.",
+    "Create frontend/src/components/automation/ControlPanel.tsx: mode selector (Reactive / Predictive / Manual radio buttons), fan status indicator (green=on, gray=off), manual override buttons (Fan On / Fan Off with duration selector), last action explanation text, override expiry countdown if active. Calls setControlMode and sendManualOverride from api/client.",
+    "Create frontend/src/components/analytics/ComparisonChart.tsx: Recharts BarChart comparing reactive vs predictive for metrics: fan_runtime_seconds, temp_exceedance_seconds, humidity_exceedance_seconds, avg_response_time_seconds. Shows both modes side by side per metric. Note 'Insufficient data — run both modes to populate' if no analytics data.",
+    "Create frontend/src/components/devices/DeviceHealth.tsx: shows connection status dot (green/red), simulation_mode, serial_port, last_reading_at with staleness warning if >30s ago, last_error if present.",
+    "Create all 7 page components in frontend/src/pages/: Overview.tsx (uses CurrentConditions + ForecastRisk + TopAlert + LiveChart), Monitoring.tsx (full-width LiveChart + reading table with pagination), Predictions.tsx (ForecastChart + metrics table), Alerts.tsx (AlertList + filter bar for risk_level), Automation.tsx (ControlPanel full page), Analytics.tsx (ComparisonChart + summary stats), DeviceHealth.tsx (DeviceHealth component + raw status JSON). Each page uses usePolling with appropriate intervals (overview 5s, monitoring 5s, predictions 30s, others 10s).",
+    "Create frontend/src/App.tsx: React Router BrowserRouter with Routes mapping all 7 paths (/=overview, /monitoring, /predictions, /alerts, /automation, /analytics, /devices). Wraps all routes in layout with Sidebar + Header. Handles 404.",
+    "Create frontend/src/main.tsx: StrictMode, render App into #root.",
+    "Create frontend/index.html: standard Vite HTML template with title 'SolarFlow — Predictive Greenhouse Management'.",
+    "Update frontend/vite.config.ts: set server.proxy '/api' -> 'http://localhost:8000' for dev, define VITE_API_URL env var."
+  ],
+  "acceptance_criteria": [
+    "`cd frontend && npm run build` completes with zero TypeScript errors and zero Vite errors",
+    "No `any` types in any .tsx or .ts file (enforce with `npx tsc --noEmit`)",
+    "All 7 pages render without runtime errors (verified by build success + visual inspection)",
+    "LiveChart and ForecastChart include reference lines at temperature and humidity thresholds",
+    "Simulated data is clearly labelled with a visible badge",
+    "ControlPanel rejects unknown actions client-side (only sends allowed ManualOverrideRequest actions)"
+  ],
+  "verification": [
+    "cd frontend && npm install",
+    "cd frontend && npm run build",
+    "cd frontend && npx tsc --noEmit"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}
