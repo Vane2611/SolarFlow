@@ -2,7 +2,7 @@
   "id": "FEAT-005",
   "type": "feat",
   "description": "Arduino firmware, hardware protocol documentation, backend unit tests, and project README. Depends on FEAT-001/002/003 being complete (tests import backend modules). Independent of FEAT-004.",
-  "status": "pending",
+  "status": "completed",
   "steps": [
     "Create firmware/solarflow_sensor/solarflow_sensor.ino: Arduino sketch that (a) reads DHT22 on pin 2 every 5 seconds using the DHT library, (b) controls a relay on pin 7 (HIGH=fan on, LOW=fan off), (c) sends JSON readings over Serial at 9600 baud: {\"type\":\"reading\",\"temp\":25.4,\"humidity\":68.2,\"ts\":12345} where ts is millis(), (d) listens for JSON commands on Serial: {\"cmd\":\"fan_on\"} / {\"cmd\":\"fan_off\"} / {\"cmd\":\"noop\"}, (e) responds with {\"type\":\"ack\",\"cmd\":\"fan_on\",\"ok\":true}, (f) on DHT22 read failure sends {\"type\":\"error\",\"code\":\"sensor_fail\"}, (g) includes #define constants for all pin numbers and intervals, (h) uses a watchdog pattern — if no valid command received in 60s, stays in last known state (does not reset fan). Includes comments explaining each section.",
     "Create firmware/PROTOCOL.md: documents the serial communication protocol — baud rate, JSON message schemas for readings, commands, acks, and errors; startup sequence; error codes; wiring diagram (ASCII art) for DHT22 + relay + fan circuit with component values; notes on 5V relay module compatibility; safety notes (flyback diode, fan power supply rating).",
@@ -21,5 +21,5 @@
     "cd backend && pytest app/tests/ -v --tb=short"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "All test files (test_forecasting.py, test_control.py, test_api.py) were already fully implemented in FEAT-002 and FEAT-003 and passed 72/72. FEAT-005 created: firmware/solarflow_sensor/solarflow_sensor.ino (DHT22 reads every 5s, relay on pin 7, newline-delimited JSON protocol, ArduinoJson v6, allowlist enforcement for unknown commands, watchdog comment, #define constants, startup announcement); firmware/PROTOCOL.md (full schema tables, startup sequence, watchdog behaviour, ASCII wiring diagram, component values, relay compatibility notes, flyback diode safety note, mains safety note, Python integration reference); README.md (architecture ASCII diagram, prerequisites table, full setup/run instructions, env var reference table, API endpoint table with request/response shapes, ML section covering models/features/metrics/synthetic-data labelling, control logic section reactive+predictive+fallback+override+allowlist, hardware wiring quick reference, testing instructions, known limitations). Verification: pytest app/tests/ -v — 72 passed, 1 warning (Starlette httpx deprecation, harmless) in 66.65s."
 }
