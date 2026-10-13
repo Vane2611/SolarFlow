@@ -10,8 +10,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ForecastRecord, SensorReading
 from app.schemas import (
+    ForecastPointOut,
+    ForecastRecordGrouped,
     ForecastRecordOut,
     ModelMetrics,
+    ModelMetricsFrontend,
     PredictionsResponse,
     SingleModelMetrics,
 )
@@ -66,6 +69,8 @@ def get_predictions(
             model_metrics=[],
             data_is_synthetic=data_is_synthetic,
             note=_SYNTHETIC_NOTE if data_is_synthetic else _REAL_NOTE,
+            latest=None,
+            model_version="rf-v1",
         )
 
     # Generate forecast records
@@ -88,6 +93,7 @@ def get_predictions(
     # Build metrics list from the service
     raw_metrics = forecasting_service.get_metrics()
     model_metrics: list[ModelMetrics] = []
+    frontend_metrics: list[ModelMetricsFrontend] = []
     for horizon in HORIZONS:
         horizon_data = raw_metrics.get(horizon, {})
         baseline_data = horizon_data.get("baseline", {})
@@ -109,6 +115,39 @@ def get_predictions(
                 ),
             )
         )
+        # Frontend-facing flat metrics — use random_forest values as primary
+        frontend_metrics.append(
+            ModelMetricsFrontend(
+                horizon_minutes=horizon,
+                temp_mae=rf_data.get("mae_temperature") or 0.0,
+                temp_rmse=rf_data.get("rmse_temperature") or 0.0,
+                humidity_mae=rf_data.get("mae_humidity") or 0.0,
+                humidity_rmse=rf_data.get("rmse_humidity") or 0.0,
+            )
+        )
+
+    # Determine primary model_version from first forecast record
+    primary_model_version = forecast_out[0].model_version if forecast_out else "rf-v1"
+
+    # Build the grouped ForecastRecordGrouped (frontend `latest`)
+    forecast_points = [
+        ForecastPointOut(
+            horizon_minutes=f.horizon_minutes,
+            predicted_temperature=f.predicted_temperature_c,
+            predicted_humidity=f.predicted_humidity_pct,
+            confidence=1.0,
+        )
+        for f in forecast_out
+    ]
+    latest_grouped = ForecastRecordGrouped(
+        id=forecast_out[0].id if forecast_out else 0,
+        timestamp=now,
+        greenhouse_id=greenhouse_id,
+        model_version=primary_model_version,
+        data_is_synthetic=data_is_synthetic,
+        forecasts=forecast_points,
+        metrics=frontend_metrics,
+    )
 
     return PredictionsResponse(
         greenhouse_id=greenhouse_id,
@@ -117,4 +156,6 @@ def get_predictions(
         model_metrics=model_metrics,
         data_is_synthetic=data_is_synthetic,
         note=_SYNTHETIC_NOTE if data_is_synthetic else _REAL_NOTE,
+        latest=latest_grouped,
+        model_version=primary_model_version,
     )
