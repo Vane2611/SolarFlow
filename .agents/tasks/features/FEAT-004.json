@@ -2,7 +2,7 @@
   "id": "FEAT-004",
   "type": "feat",
   "description": "React/Vite/TypeScript frontend: full SPA with 7 pages (Overview, Monitoring, Predictions, Alerts, Automation, Analytics, DeviceHealth), layout components (Sidebar, Header), all domain components, typed API client, polling hook, and Recharts charts with threshold lines. Depends on FEAT-001/002/003 being complete so the API is fully functional. The frontend is independent in that it can be built and statically verified without a running backend — the Vite build only needs TypeScript to compile.",
-  "status": "pending",
+  "status": "completed",
   "steps": [
     "Scaffold frontend with Vite: `cd c:\\Users\\ADMIN\\SolarFlow && npm create vite@latest frontend -- --template react-ts` (answer prompts non-interactively by passing flags), then `cd frontend && npm install`. If the directory already exists, skip scaffold and only run npm install.",
     "Add dependencies to frontend/package.json and install: recharts@^2.12, react-router-dom@^6.23, @types/react-router-dom (if needed), lucide-react@^0.395. Run `npm install recharts react-router-dom lucide-react` from frontend/.",
@@ -42,5 +42,5 @@
     "cd frontend && npx tsc --noEmit"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Implemented all 7 pages (Overview, Monitoring, Predictions, Alerts, Automation, Analytics, DeviceHealth), layout components (Sidebar, Header), domain components (CurrentConditions, ForecastRisk, TopAlert, LiveChart, ForecastChart, AlertList, ControlPanel, ComparisonChart, DeviceHealthCard), typed API client, usePolling hook, and index.css. All files use strict TypeScript with no `any` types. LiveChart and ForecastChart include ReferenceLine components at TEMP_WARN=30°C (amber), TEMP_MAX=32°C (red), and HUMIDITY_MAX=85% (blue). Simulated data is labelled with visible SIMULATED badges. ControlPanel validates ManualAction client-side against allowlist. `npm run build` and `npx tsc --noEmit` both exit 0 with zero errors. Fixes applied: removed `noUncheckedSideEffectImports` (blocked CSS side-effect imports), added `types: ['vite/client']` to tsconfig.app.json for ImportMeta.env, removed `process.env` reference from vite.config.ts."
 }
