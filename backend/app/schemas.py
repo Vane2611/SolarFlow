@@ -116,12 +116,21 @@ class ManualOverrideRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ModelMetrics(BaseModel):
-    horizon_minutes: int
+class SingleModelMetrics(BaseModel):
+    """MAE/RMSE for one model type at one horizon."""
+
     mae_temperature: float | None = None
     rmse_temperature: float | None = None
     mae_humidity: float | None = None
     rmse_humidity: float | None = None
+
+
+class ModelMetrics(BaseModel):
+    """Evaluation metrics for a single forecast horizon, covering both models."""
+
+    horizon_minutes: int
+    baseline: SingleModelMetrics = SingleModelMetrics()
+    random_forest: SingleModelMetrics = SingleModelMetrics()
 
 
 class PredictionsResponse(BaseModel):
