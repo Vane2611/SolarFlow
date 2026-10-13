@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +62,105 @@ def _start_forecasting_training() -> None:
     logger.info("Forecasting training started in background thread.")
 
 
+def _write_analytics_snapshot(db: Any, reading: Any, state: Any) -> None:
+    """Compute and persist one AnalyticsSnapshot row for the current mode.
+
+    We look back over the last SNAPSHOT_WINDOW_SECONDS of sensor readings
+    and control-state rows to compute cumulative metrics for the active mode.
+    This is deliberately simple (O(n) per tick over a bounded window) and
+    appropriate for an MVP running a few readings per minute.
+    """
+    from datetime import timedelta
+    from app.models import AnalyticsSnapshot, ControlState as CS, SensorReading as SR
+
+    SNAPSHOT_WINDOW_SECONDS = 3600  # 1-hour rolling window
+
+    now = reading.timestamp
+    # Use aware datetime for cutoff even if reading timestamp is naive.
+    try:
+        from datetime import timezone as _tz
+        cutoff = now.replace(tzinfo=_tz.utc) - timedelta(seconds=SNAPSHOT_WINDOW_SECONDS)
+    except Exception:
+        cutoff = now - timedelta(seconds=SNAPSHOT_WINDOW_SECONDS)
+
+    current_mode: str = str(state.mode.value if hasattr(state.mode, "value") else state.mode)
+
+    # --- fan runtime: count control-state rows with fan_on=True in window ---
+    try:
+        from app.models import ControlState as _CS
+        recent_states = (
+            db.query(_CS)
+            .filter(
+                _CS.greenhouse_id == reading.greenhouse_id,
+                _CS.updated_at >= cutoff,
+                _CS.mode == state.mode,
+            )
+            .order_by(_CS.updated_at.asc())
+            .all()
+        )
+        fan_runtime = sum(
+            settings.SIMULATION_INTERVAL_SECONDS
+            for s in recent_states
+            if s.fan_on
+        )
+        # Estimate avg_response_time: mean seconds from temp crossing threshold
+        # to fan turning on.  We approximate as interval * fraction of fan-on ticks
+        # among ticks where fan was previously off (transitions).
+        transitions_on = [
+            i for i, s in enumerate(recent_states[1:], 1)
+            if s.fan_on and not recent_states[i - 1].fan_on
+        ]
+        avg_response: float | None = None
+        if transitions_on:
+            # Approximate: each on-transition counts as one response;
+            # response time ≈ one interval (since we poll every interval).
+            avg_response = float(settings.SIMULATION_INTERVAL_SECONDS)
+    except Exception:
+        fan_runtime = 0.0
+        avg_response = None
+
+    # --- temperature exceedance: seconds above TEMP_MAX_C ---
+    try:
+        from app.models import SensorReading as _SR
+        recent_readings = (
+            db.query(_SR)
+            .filter(
+                _SR.greenhouse_id == reading.greenhouse_id,
+                _SR.timestamp >= cutoff,
+            )
+            .order_by(_SR.timestamp.asc())
+            .all()
+        )
+        temp_exc = sum(
+            settings.SIMULATION_INTERVAL_SECONDS
+            for r in recent_readings
+            if r.temperature_c > settings.TEMP_MAX_C
+        )
+        humidity_exc = sum(
+            settings.SIMULATION_INTERVAL_SECONDS
+            for r in recent_readings
+            if r.humidity_pct > settings.HUMIDITY_MAX_PCT
+        )
+    except Exception:
+        temp_exc = 0.0
+        humidity_exc = 0.0
+
+    snapshot = AnalyticsSnapshot(
+        greenhouse_id=reading.greenhouse_id,
+        mode=current_mode,
+        fan_runtime_seconds=float(fan_runtime),
+        temp_exceedance_seconds=float(temp_exc),
+        humidity_exceedance_seconds=float(humidity_exc),
+        avg_response_time_seconds=avg_response,
+    )
+    db.add(snapshot)
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("Error persisting analytics snapshot.")
+        db.rollback()
+
+
 def _start_scheduler():  # type: ignore[return]
     """Configure APScheduler to emit simulated sensor readings."""
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -80,7 +179,7 @@ def _start_scheduler():  # type: ignore[return]
             db.commit()
             db.refresh(reading)
             evaluate_reading(db, reading)
-            evaluate(db, reading)
+            state = evaluate(db, reading)
 
             # Generate and persist forecast records after each new reading
             if forecasting_service.is_trained:
@@ -94,6 +193,12 @@ def _start_scheduler():  # type: ignore[return]
                     db.commit()
                 except Exception:
                     logger.exception("Error writing forecast records in tick.")
+
+            # Persist an analytics snapshot every tick so the comparison
+            # page always has data.  We compute a rolling window over the
+            # last SNAPSHOT_WINDOW_SECONDS of readings for the current mode.
+            _write_analytics_snapshot(db, reading, state)
+
         except Exception:
             logger.exception("Error in scheduler tick.")
         finally:

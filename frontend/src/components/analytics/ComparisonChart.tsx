@@ -118,11 +118,6 @@ export function ComparisonChart({ snapshots }: ComparisonChartProps) {
           </thead>
           <tbody>
             <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <td style={{ padding: '8px 12px' }}>Alerts triggered</td>
-              <td style={{ padding: '8px 12px', textAlign: 'right' }}>{reactive?.num_alerts ?? '—'}</td>
-              <td style={{ padding: '8px 12px', textAlign: 'right' }}>{predictive?.num_alerts ?? '—'}</td>
-            </tr>
-            <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
               <td style={{ padding: '8px 12px' }}>Fan runtime (min)</td>
               <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                 {reactive ? secondsToMinutes(reactive.fan_runtime_seconds) : '—'}
@@ -143,10 +138,14 @@ export function ComparisonChart({ snapshots }: ComparisonChartProps) {
             <tr>
               <td style={{ padding: '8px 12px' }}>Avg response time (s)</td>
               <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                {reactive?.avg_response_time_seconds.toFixed(1) ?? '—'}
+                {reactive?.avg_response_time_seconds != null
+                  ? reactive.avg_response_time_seconds.toFixed(1)
+                  : '—'}
               </td>
               <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                {predictive?.avg_response_time_seconds.toFixed(1) ?? '—'}
+                {predictive?.avg_response_time_seconds != null
+                  ? predictive.avg_response_time_seconds.toFixed(1)
+                  : '—'}
               </td>
             </tr>
           </tbody>

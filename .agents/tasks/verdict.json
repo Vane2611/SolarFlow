@@ -1,9 +1,9 @@
 {
   "verdict": "CHANGES_REQUESTED",
   "findings": [
-    "SensorReading field name mismatch: backend SensorReadingOut returns 'temperature_c' and 'humidity_pct', but frontend SensorReading type and all components (CurrentConditions, LiveChart, ForecastChart, Monitoring page) expect 'temperature' and 'humidity'. Every temperature and humidity value in the UI renders as undefined.",
-    "PredictionsResponse shape mismatch: backend /api/predictions returns { forecasts: ForecastRecordOut[], model_metrics, data_is_synthetic, ... } with each forecast having 'predicted_temperature_c'/'predicted_humidity_pct', but frontend PredictionsResponse type expects { latest: ForecastRecord | null, ... } where ForecastRecord wraps forecasts with fields 'predicted_temperature'/'predicted_humidity'. ForecastRisk and ForecastChart both receive null for 'latest' and display 'No forecast available yet'.",
-    "ControlState field name mismatch: backend ControlStateOut returns 'fan_on' (bool), 'action_reason', 'manual_override' (bool), 'override_expires_at', but frontend ControlState type expects 'fan_state' ('on'|'off'), 'last_action_reason', 'manual_override_active' (bool), 'manual_override_expires_at'. Fan status indicator, override countdown, and action reason text all render as undefined in ControlPanel.",
-    "DeviceStatus connection_status field missing: backend DeviceStatusResponse has no 'connection_status' field (only 'connected: bool' and 'simulation_mode: bool'), but the frontend DeviceStatus type and Header.tsx both read 'connection_status' to drive the Wifi icon and live/simulated/offline label. The connection indicator in the header always shows '—'."
-  ]
+    "AnalyticsSnapshot frontend type declares `recorded_at`, `num_alerts`, and `period_hours` fields that do not exist on the backend AnalyticsSnapshotOut schema (backend uses `captured_at`; `num_alerts` and `period_hours` have no model column). ComparisonChart.tsx accesses `num_alerts` at runtime and will render `undefined` for both rows.",
+    "avg_response_time_seconds is `float | None` in AnalyticsSnapshotOut but ComparisonChart.tsx calls `.toFixed(1)` on it without a null guard — will throw TypeError when the backend returns null.",
+    "No code writes AnalyticsSnapshot rows. The scheduler tick in main.py never creates an AnalyticsSnapshot, so GET /api/analytics/comparison always returns an empty list and the comparison page is permanently empty."
+  ],
+  "reviewDoc": "c:\\Users\\ADMIN\\SolarFlow\\.agents\\tasks\\2026-10-13-181458-review.md"
 }

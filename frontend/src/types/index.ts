@@ -79,14 +79,14 @@ export interface ManualOverrideRequest {
 }
 
 export interface AnalyticsSnapshot {
+  id: number;
+  greenhouse_id: string;
+  captured_at: string;
   mode: ControlMode;
-  period_hours: number;
   fan_runtime_seconds: number;
   temp_exceedance_seconds: number;
   humidity_exceedance_seconds: number;
-  avg_response_time_seconds: number;
-  num_alerts: number;
-  recorded_at: string;
+  avg_response_time_seconds: number | null;
 }
 
 export interface HealthResponse {
