@@ -16,7 +16,7 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 @router.get("/status", response_model=DeviceStatusResponse)
 def get_device_status(db: Session = Depends(get_db)) -> DeviceStatusResponse:
-    """Return connection status, last reading time, and error state."""
+    """Return connection status, last reading time, hardware status, and error state."""
     latest = (
         db.query(SensorReading)
         .filter(SensorReading.greenhouse_id == settings.GREENHOUSE_ID)
@@ -24,11 +24,15 @@ def get_device_status(db: Session = Depends(get_db)) -> DeviceStatusResponse:
         .first()
     )
 
+    hw_status = hardware_interface.get_status()
+
     return DeviceStatusResponse(
         greenhouse_id=settings.GREENHOUSE_ID,
-        simulation_mode=settings.SIMULATION_MODE,
+        simulation_mode=hw_status["simulation_mode"],
         last_reading_at=latest.timestamp if latest else None,
-        serial_port=hardware_interface.port,
-        connected=hardware_interface.connected,
-        last_error=hardware_interface.last_error,
+        serial_port=hw_status["port"],
+        connected=hw_status["connected"],
+        last_error=hw_status["last_error"],
+        last_command=hw_status["last_command"],
+        last_command_at=hw_status["last_command_at"],
     )

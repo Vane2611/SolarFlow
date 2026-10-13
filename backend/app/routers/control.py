@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models import ControlMode, ControlState
 from app.schemas import ControlModeRequest, ControlStateOut, ManualOverrideRequest
+from app.services.hardware import hardware_interface
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/control", tags=["control"])
 
@@ -85,4 +89,14 @@ def manual_override(
 
     db.commit()
     db.refresh(state)
+
+    # Issue hardware command — allowlist enforced inside send_command()
+    # ManualOverrideRequest already validates action is in the allowlist
+    # via Pydantic Literal, so ValueError from hardware is not expected here.
+    try:
+        hardware_interface.send_command(body.action)
+    except ValueError as exc:
+        # Defensive: should not happen given Pydantic validation
+        logger.error("Hardware command rejected for manual override: %s", exc)
+
     return state  # type: ignore[return-value]

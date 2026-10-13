@@ -157,3 +157,5 @@ class DeviceStatusResponse(BaseModel):
     serial_port: str | None
     connected: bool
     last_error: str | None
+    last_command: str | None = None
+    last_command_at: str | None = None
