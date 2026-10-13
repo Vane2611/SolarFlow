@@ -366,4 +366,4 @@ Test files:
 
 ## Contributors
 
-Built as a hackathon MVP.  See commit history for individual contributions.
+Vane Meta Apeli    Emmanuella Omondi
