@@ -10,6 +10,7 @@ export interface PollingResult<T> {
 export function usePolling<T>(
   fetcher: () => Promise<T>,
   intervalMs: number,
+  onData?: (data: T) => void,
 ): PollingResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export function usePolling<T>(
     try {
       const result = await fetcher();
       setData(result);
+      onData?.(result);
       setError(null);
       setLastUpdated(new Date());
     } catch (err) {
@@ -27,7 +29,7 @@ export function usePolling<T>(
     } finally {
       setLoading(false);
     }
-  }, [fetcher]);
+  }, [fetcher, onData]);
 
   useEffect(() => {
     void fetchData();

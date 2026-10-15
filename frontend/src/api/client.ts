@@ -1,6 +1,7 @@
 import type {
   Alert,
   AnalyticsSnapshot,
+  AnalyticsSummaryResponse,
   ControlModeRequest,
   ControlState,
   DeviceStatus,
@@ -69,4 +70,8 @@ export function sendManualOverride(req: ManualOverrideRequest): Promise<ControlS
 
 export function getAnalyticsComparison(hours = 24): Promise<AnalyticsSnapshot[]> {
   return apiFetch<AnalyticsSnapshot[]>(`/api/analytics/comparison?hours=${hours}`);
+}
+
+export function getAnalyticsSummary(hours = 24): Promise<AnalyticsSummaryResponse> {
+  return apiFetch<AnalyticsSummaryResponse>(`/api/analytics/summary?hours=${hours}`);
 }

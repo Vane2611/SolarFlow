@@ -166,6 +166,43 @@ class AnalyticsSnapshotOut(_ORMBase):
 
 
 # ---------------------------------------------------------------------------
+# Analytics Summary (aggregated KPIs per mode)
+# ---------------------------------------------------------------------------
+
+
+class ModeKPIs(BaseModel):
+    """Aggregated KPIs for a single control mode over the requested window."""
+
+    mode: str
+    sample_count: int
+    # Fan
+    total_fan_runtime_minutes: float
+    avg_fan_runtime_minutes: float
+    # Temperature exceedance
+    total_temp_exceedance_minutes: float
+    avg_temp_exceedance_minutes: float
+    # Humidity exceedance
+    total_humidity_exceedance_minutes: float
+    # Response time
+    avg_response_time_seconds: float | None
+    # Derived efficiency score: 0–100 (higher = better)
+    # Formula: 100 - clamp(temp_exc_min / window_minutes * 100, 0, 50)
+    #                - clamp(avg_response_s / 30 * 50, 0, 50)
+    efficiency_score: float
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    """Top-level analytics summary returned by GET /api/analytics/summary."""
+
+    greenhouse_id: str
+    window_hours: int
+    generated_at: datetime
+    modes: list[ModeKPIs]
+    # Ordered by captured_at ASC for the time-series chart
+    time_series: list[AnalyticsSnapshotOut]
+
+
+# ---------------------------------------------------------------------------
 # Request bodies
 # ---------------------------------------------------------------------------
 

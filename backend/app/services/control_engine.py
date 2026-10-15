@@ -127,10 +127,14 @@ class ControlEngine:
         # ------------------------------------------------------------------
         # 1. Expire stale manual override
         # ------------------------------------------------------------------
+        # SQLite returns naive datetimes; make comparison timezone-safe.
+        def _as_aware(dt: datetime) -> datetime:
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
         if (
             state.manual_override
             and state.override_expires_at is not None
-            and state.override_expires_at <= now
+            and _as_aware(state.override_expires_at) <= now
         ):
             state.manual_override = False
             state.override_expires_at = None
@@ -304,11 +308,17 @@ class ControlEngine:
         min_run = cfg["min_fan_run_seconds"]
         min_off = cfg["min_fan_off_seconds"]
 
-        # Calculate elapsed seconds since last state change
-        elapsed = (now - state.updated_at).total_seconds() if state.updated_at else 9999.0
-        # updated_at may be naive — make comparison safe
-        if state.updated_at and state.updated_at.tzinfo is None:
-            elapsed = (now.replace(tzinfo=None) - state.updated_at).total_seconds()
+        # Calculate elapsed seconds since last state change.
+        # SQLite stores naive datetimes; normalise before subtracting.
+        if state.updated_at:
+            updated_at = (
+                state.updated_at
+                if state.updated_at.tzinfo is not None
+                else state.updated_at.replace(tzinfo=timezone.utc)
+            )
+            elapsed = (now - updated_at).total_seconds()
+        else:
+            elapsed = 9999.0
 
         if state.fan_on and not desired_fan_on:
             # Trying to turn fan off — check minimum run time

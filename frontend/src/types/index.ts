@@ -89,6 +89,26 @@ export interface AnalyticsSnapshot {
   avg_response_time_seconds: number | null;
 }
 
+export interface ModeKPIs {
+  mode: string;
+  sample_count: number;
+  total_fan_runtime_minutes: number;
+  avg_fan_runtime_minutes: number;
+  total_temp_exceedance_minutes: number;
+  avg_temp_exceedance_minutes: number;
+  total_humidity_exceedance_minutes: number;
+  avg_response_time_seconds: number | null;
+  efficiency_score: number;
+}
+
+export interface AnalyticsSummaryResponse {
+  greenhouse_id: string;
+  window_hours: number;
+  generated_at: string;
+  modes: ModeKPIs[];
+  time_series: AnalyticsSnapshot[];
+}
+
 export interface HealthResponse {
   status: 'ok' | 'degraded' | 'error';
   version: string;

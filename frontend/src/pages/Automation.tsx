@@ -1,19 +1,27 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { usePolling } from '../hooks/usePolling';
-import { getControlMode } from '../api/client';
+import { getControlMode, getLatestReading } from '../api/client';
 import { ControlPanel } from '../components/automation/ControlPanel';
+import type { ControlState, SensorReading } from '../types';
 
 export function Automation() {
-  const fetcher = useCallback(() => getControlMode(), []);
-  const { data, loading, error, lastUpdated } = usePolling(fetcher, 10_000);
+  // Local state so we can do an immediate re-fetch after mutations
+  const [controlState, setControlState] = useState<ControlState | null>(null);
 
-  // Expose a manual refresh by recreating the hook trigger — we achieve this
-  // by relying on the interval; for immediate feedback after actions we rely
-  // on the component calling onRefresh which triggers the fetcher directly.
+  const fetcher = useCallback(() => getControlMode(), []);
+  const readingFetcher = useCallback(() => getLatestReading(), []);
+
+  const { error, loading, lastUpdated } = usePolling(fetcher, 5_000, setControlState);
+  const { data: latestReading } = usePolling<SensorReading>(readingFetcher, 5_000);
+
+  // Immediate refresh — called by ControlPanel after every mutation
   const refresh = useCallback(async () => {
-    // Next poll will pick up changes; the ControlPanel will call this after mutations.
-    // For immediate refresh we just re-invoke fetcher manually and update state via
-    // the polling result on next tick — acceptable for MVP.
+    try {
+      const fresh = await getControlMode();
+      setControlState(fresh);
+    } catch {
+      // polling will recover on next tick
+    }
   }, []);
 
   return (
@@ -24,7 +32,12 @@ export function Automation() {
           Last updated: {lastUpdated.toLocaleTimeString('en-GB')}
         </div>
       )}
-      <ControlPanel controlState={data} loading={loading} onRefresh={refresh} />
+      <ControlPanel
+        controlState={controlState}
+        loading={loading}
+        onRefresh={refresh}
+        latestReading={latestReading}
+      />
     </div>
   );
 }
