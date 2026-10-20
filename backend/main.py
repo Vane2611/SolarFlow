@@ -11,8 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import SessionLocal, create_all
+from app.models import DataSource, SensorReading
 from app.routers import alerts, analytics, control, devices, predictions, readings
 from app.schemas import HealthResponse
+from app.services.hardware import hardware_interface
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -23,6 +25,10 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# How often the forecaster checks whether enough hardware readings have
+# accumulated to justify retraining.
+RETRAIN_INTERVAL_SECONDS = 300
 
 # ---------------------------------------------------------------------------
 # Lifespan (replaces deprecated on_event)
@@ -35,11 +41,56 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     create_all()
     logger.info("Database tables verified.")
     _start_forecasting_training()
+    _start_hardware()
     scheduler = _start_scheduler()
     yield
     logger.info("SolarFlow shutting down…")
     if scheduler.running:
         scheduler.shutdown(wait=False)
+    _stop_hardware()
+
+
+def _start_hardware() -> None:
+    """Open the serial link to the Arduino sensor node.
+
+    The link is only opened when ``SIMULATION_MODE`` is disabled.  If the
+    connection fails the backend keeps running on simulated readings so
+    the dashboard stays available.
+    """
+    hardware_interface.configure(settings.SERIAL_PORT, settings.SERIAL_BAUD)
+
+    if settings.SIMULATION_MODE:
+        logger.info("Simulation mode — the serial link stays closed.")
+        return
+
+    if not settings.SERIAL_PORT:
+        logger.warning(
+            "SIMULATION_MODE is false but SERIAL_PORT is not set — "
+            "falling back to simulated readings."
+        )
+        return
+
+    if hardware_interface.connect():
+        logger.info(
+            "Hardware link active on %s at %d baud.",
+            settings.SERIAL_PORT,
+            settings.SERIAL_BAUD,
+        )
+    else:
+        logger.warning(
+            "Hardware link failed (%s) — falling back to simulated readings.",
+            hardware_interface.last_error,
+        )
+
+
+def _stop_hardware() -> None:
+    """Close the serial link and stop the background I/O thread."""
+    hardware_interface.disconnect()
+
+
+def _hardware_active() -> bool:
+    """True when live hardware readings should be used instead of the simulator."""
+    return not settings.SIMULATION_MODE and hardware_interface.connected
 
 
 def _start_forecasting_training() -> None:
@@ -161,8 +212,33 @@ def _write_analytics_snapshot(db: Any, reading: Any, state: Any) -> None:
         db.rollback()
 
 
+def _collect_readings(simulator: Any) -> list[SensorReading]:
+    """Return the readings that should be persisted on this tick.
+
+    In hardware mode this is every DHT22 sample received since the last
+    tick — the Arduino samples every 5 s, matching the tick interval.
+    In simulation mode it is a single synthetic reading.
+    """
+    if _hardware_active():
+        raw = hardware_interface.poll_readings()
+        if not raw:
+            return []
+        return [
+            SensorReading(
+                greenhouse_id=settings.GREENHOUSE_ID,
+                timestamp=item["received_at"],
+                temperature_c=item["temperature_c"],
+                humidity_pct=item["humidity_pct"],
+                data_source=DataSource.real,
+            )
+            for item in raw
+        ]
+
+    return [simulator.next_reading()]
+
+
 def _start_scheduler():  # type: ignore[return]
-    """Configure APScheduler to emit simulated sensor readings."""
+    """Configure APScheduler to emit sensor readings."""
     from apscheduler.schedulers.background import BackgroundScheduler
     from app.services.simulator import GreenhouseSimulator
     from app.services.alert_engine import evaluate_reading
@@ -171,12 +247,64 @@ def _start_scheduler():  # type: ignore[return]
 
     simulator = GreenhouseSimulator(greenhouse_id=settings.GREENHOUSE_ID)
 
+    # Number of hardware readings the forecaster was last trained on, so
+    # retraining only happens once the data set has grown meaningfully.
+    last_trained_count = 0
+
+    def retrain_on_hardware_data() -> None:
+        """Retrain the forecaster once real hardware readings are available.
+
+        Without this the model would stay trained on generated data for the
+        whole life of the process, even after the DHT22 has produced
+        thousands of genuine samples.
+        """
+        nonlocal last_trained_count
+
+        from app.models import DataSource
+        from app.services.forecasting import forecasting_service, _MIN_REAL_READINGS
+
+        db = SessionLocal()
+        try:
+            count = (
+                db.query(SensorReading)
+                .filter(SensorReading.data_source == DataSource.real)
+                .count()
+            )
+        finally:
+            db.close()
+
+        if count < _MIN_REAL_READINGS:
+            return
+
+        threshold = max(_MIN_REAL_READINGS, int(last_trained_count * 1.25))
+        if count < threshold:
+            return
+
+        logger.info("Retraining forecaster on %d hardware readings.", count)
+
+        train_db = SessionLocal()
+        try:
+            forecasting_service.train(db=train_db)
+            last_trained_count = count
+        except Exception:
+            logger.exception("Error retraining the forecaster.")
+        finally:
+            train_db.close()
+
     def tick() -> None:
         db = SessionLocal()
         try:
-            reading = simulator.next_reading()
-            db.add(reading)
+            readings = _collect_readings(simulator)
+            if not readings:
+                # No new hardware sample has arrived yet — nothing to do.
+                return
+
+            for reading in readings:
+                db.add(reading)
             db.commit()
+
+            # The control and forecast pipeline runs on the newest sample.
+            reading = readings[-1]
             db.refresh(reading)
             evaluate_reading(db, reading)
             state = evaluate(db, reading)
@@ -210,6 +338,13 @@ def _start_scheduler():  # type: ignore[return]
         trigger="interval",
         seconds=settings.SIMULATION_INTERVAL_SECONDS,
         id="sensor_tick",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        retrain_on_hardware_data,
+        trigger="interval",
+        seconds=RETRAIN_INTERVAL_SECONDS,
+        id="forecaster_retrain",
         replace_existing=True,
     )
     scheduler.start()

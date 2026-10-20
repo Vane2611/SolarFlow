@@ -36,7 +36,8 @@ software is validated.
                                │ USB serial  (optional)
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │  Arduino Uno                                                        │
-│  DHT22 (pin 2)  +  5 V relay module (pin 7)  +  DC fan             │
+│  DHT22 (pin 2)  +  16x2 LCD (4-bit, pins 3/4/5/6/11/12)            │
+│  5 V relay module (pin 7)  →  DC fan                                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -304,15 +305,62 @@ Arduino pin 7  →  Relay IN
 Relay COM      →  Fan +
 Relay NO       →  Fan − (through external PSU)
 External PSU − →  Arduino GND (common ground)
+
+Arduino pin 12 →  LCD RS
+Arduino pin 11 →  LCD EN
+Arduino pin 5  →  LCD D4
+Arduino pin 4  →  LCD D5
+Arduino pin 3  →  LCD D6
+Arduino pin 6  →  LCD D7
+Arduino 5 V    →  LCD VCC
+Arduino GND    →  LCD GND
 ```
+
+The LCD is a 16x2 character module in 4-bit parallel mode.  It shows the
+live readings and the fan state:
+
+```
+┌────────────────┐
+│T:25.4°C H:68.2%│   ← temperature and humidity
+│FAN:ON  OK      │   ← fan state and status token
+└────────────────┘
+```
+
+Status tokens: `OK` (healthy), `WARN` (temperature ≥ 30 °C or humidity
+≥ 85 %), `ERR` (the last sensor read failed).
 
 ### Uploading firmware
 
-1. Install the **DHT sensor library** by Adafruit and **ArduinoJson** v6
-   via the Arduino Library Manager.
+1. Install the **DHT sensor library** by Adafruit and **ArduinoJson** (v6
+   or v7) via the Arduino Library Manager.
 2. Open `firmware/solarflow_sensor/solarflow_sensor.ino` in Arduino IDE.
+   The sketch folder also contains `lcd_display.h` / `lcd_display.cpp`,
+   which Arduino IDE compiles automatically.  The `LiquidCrystal` library
+   ships with the IDE — no installation needed.
 3. Select your board (Arduino Uno) and port.
 4. Click Upload.
+
+### Running against real hardware
+
+1. Wire the DHT22, the LCD and the relay as shown above.
+2. Upload the firmware and open the Arduino Serial Monitor at **9600
+   baud** to confirm the readings arrive.
+3. Configure the backend in `backend/.env`:
+
+   ```
+   SIMULATION_MODE=false
+   SERIAL_PORT=COM3          # Windows — adjust to your port
+   SERIAL_BAUD=9600
+   ```
+
+4. Start the backend.  It opens the serial port, logs
+   `Hardware link active on COM3 at 9600 baud`, and stores every DHT22
+   sample as a `SensorReading` row with `data_source = "real"`.
+
+If the port cannot be opened the backend logs a warning and keeps running
+on simulated readings, so the dashboard stays available.  The **Device
+Health** card shows the live connection state, the firmware version and
+the last command sent to the relay.
 
 ---
 
@@ -333,6 +381,7 @@ Test files:
 | `app/tests/test_forecasting.py` | Synthetic data generator, feature matrix builder, `train_models`, `ForecastingService` |
 | `app/tests/test_control.py` | `ControlEngine` reactive/predictive/override/timing, `AlertEngine`, `HardwareInterface` allowlist |
 | `app/tests/test_api.py` | All major API endpoints via `TestClient` |
+| `app/tests/test_hardware.py` | Serial reader thread, DHT22 reading ingestion, command acknowledgement, hardware-mode reading conversion |
 
 ---
 
@@ -358,6 +407,15 @@ Test files:
 
 - **Simulated data only by default.** Set `SIMULATION_MODE=false` and
   configure `SERIAL_PORT` to enable real hardware.
+
+- **The LCD is a display, not a sensor.** The readings it shows come from
+  the DHT22 on the same Arduino; the LCD contributes no data of its own to
+  the backend.  It mirrors temperature, humidity and the fan state only —
+  the web dashboard remains the full interface.
+
+- **Forecasts need real data to become trustworthy.** In hardware mode the
+  forecaster keeps using generated data until at least 50 live DHT22
+  samples are stored, then retrains on the real readings.
 
 - **Arduino firmware not automatically tested.** Compilation requires
   Arduino IDE or `avr-gcc` with the DHT and ArduinoJson libraries.

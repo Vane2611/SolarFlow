@@ -35,4 +35,6 @@ def get_device_status(db: Session = Depends(get_db)) -> DeviceStatusResponse:
         last_error=hw_status["last_error"],
         last_command=hw_status["last_command"],
         last_command_at=hw_status["last_command_at"],
+        firmware_version=hw_status["firmware_version"],
+        uptime_seconds=hw_status["uptime_seconds"],
     )

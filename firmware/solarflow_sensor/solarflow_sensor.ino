@@ -1,7 +1,8 @@
 /**
  * SolarFlow Sensor Node — Arduino sketch
  *
- * Reads temperature and humidity from a DHT22 sensor, controls a relay
+ * Reads temperature and humidity from a DHT22 sensor, shows the live
+ * readings and the fan state on a 16x2 character LCD, controls a relay
  * for the ventilation fan, and communicates with the SolarFlow backend
  * over a 9600-baud serial connection using newline-delimited JSON.
  *
@@ -11,6 +12,11 @@
  *   Relay IN pin    → Arduino digital pin 7
  *   Relay VCC       → Arduino 5 V
  *   Relay GND       → Arduino GND
+ *
+ *   LCD RS  → Arduino digital pin 12       LCD D4 → Arduino digital pin 5
+ *   LCD EN  → Arduino digital pin 11       LCD D5 → Arduino digital pin 4
+ *   LCD D6  → Arduino digital pin 3        LCD D7 → Arduino digital pin 6
+ *   LCD VCC → Arduino 5 V                  LCD GND → Arduino GND
  *
  * Serial protocol (see firmware/PROTOCOL.md for full spec)
  * ---------------------------------------------------------
@@ -22,7 +28,8 @@
  * Dependencies
  * ------------
  *   DHT sensor library by Adafruit (install via Arduino Library Manager)
- *   ArduinoJson  v6 (install via Arduino Library Manager)
+ *   ArduinoJson  v6 or v7 (install via Arduino Library Manager)
+ *   LiquidCrystal (bundled with the Arduino IDE — no installation needed)
  *
  * See firmware/PROTOCOL.md for the full wiring diagram, component values,
  * safety notes, and error-code reference.
@@ -31,16 +38,49 @@
 #include <DHT.h>
 #include <ArduinoJson.h>
 
+#include "lcd_display.h"
+
+// ---------------------------------------------------------------------------
+// ArduinoJson compatibility
+//
+// ArduinoJson 7 replaced the static StaticJsonDocument<N> with a
+// dynamically-sized JsonDocument.  On AVR, ARDUINOJSON_AUTO_SHRINK is
+// disabled, so the internal pool only ever grows and is reused across
+// samples — there is no repeated reallocation churn.
+//
+// The alias below lets the sketch build against either major version.
+// ---------------------------------------------------------------------------
+#if ARDUINOJSON_VERSION_MAJOR >= 7
+  #define JSON_DOC(size) JsonDocument
+#else
+  #define JSON_DOC(size) StaticJsonDocument<size>
+#endif
+
 // ---------------------------------------------------------------------------
 // Pin assignments — change only these constants if you rewire the circuit
 // ---------------------------------------------------------------------------
 #define DHT_PIN       2    // DHT22 data line
 #define RELAY_PIN     7    // Relay IN — HIGH = fan ON, LOW = fan OFF
 
+// LCD 16x2 in 4-bit parallel mode (D0-D3 left unconnected)
+#define LCD_RS_PIN   12    // Register select — command/data
+#define LCD_EN_PIN   11    // Enable — latched on the falling edge
+#define LCD_D4_PIN    5    // Data bit 4
+#define LCD_D5_PIN    4    // Data bit 5
+#define LCD_D6_PIN    3    // Data bit 6
+#define LCD_D7_PIN    6    // Data bit 7
+
 // ---------------------------------------------------------------------------
 // Sensor type
 // ---------------------------------------------------------------------------
 #define DHT_TYPE      DHT22
+
+// ---------------------------------------------------------------------------
+// Thresholds that raise the WARN token on the LCD.  These mirror the
+// crop thresholds used by the backend alert engine (30 °C / 85 %).
+// ---------------------------------------------------------------------------
+#define LCD_TEMP_WARN_C        30.0f
+#define LCD_HUMIDITY_WARN_PCT  85.0f
 
 // ---------------------------------------------------------------------------
 // Timing constants (milliseconds)
@@ -54,6 +94,9 @@
 // Globals
 // ---------------------------------------------------------------------------
 DHT dht(DHT_PIN, DHT_TYPE);
+
+LcdDisplay lcd(LCD_RS_PIN, LCD_EN_PIN,
+               LCD_D4_PIN, LCD_D5_PIN, LCD_D6_PIN, LCD_D7_PIN);
 
 unsigned long lastReadAt      = 0;   // millis() of most recent sensor read
 unsigned long lastCommandAt   = 0;   // millis() of most recent valid command
@@ -73,13 +116,23 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   setFan(false);
 
+  // The HD44780 needs a short settle time after power-up before it
+  // accepts commands.
+  delay(100);
+  lcd.begin();
+  lcd.showBoot();
+  lcd.setWarnThresholds(LCD_TEMP_WARN_C, LCD_HUMIDITY_WARN_PCT);
+
   dht.begin();
 
   // Brief startup delay to let the DHT22 stabilise
   delay(2000);
 
   // Announce readiness on the serial bus
-  Serial.println(F("{\"type\":\"startup\",\"version\":\"1.0.0\"}"));
+  Serial.println(F("{\"type\":\"startup\",\"version\":\"1.1.0\"}"));
+
+  // Force the first sample to happen on the first pass through loop().
+  lastReadAt = millis() - READ_INTERVAL_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,12 +167,13 @@ void readAndSendSensor(unsigned long ts) {
   if (isnan(humidity) || isnan(temperature)) {
     // Sensor read failed — report the error and keep the current fan state
     Serial.println(F("{\"type\":\"error\",\"code\":\"sensor_fail\"}"));
+    lcd.update(0.0f, 0.0f, fanOn, false);
     return;
   }
 
   // Build and send the JSON reading
-  // Using a fixed-size StaticJsonDocument avoids heap fragmentation on AVR
-  StaticJsonDocument<128> doc;
+  // Using a fixed-size document avoids heap fragmentation on AVR
+  JSON_DOC(128) doc;
   doc["type"]     = "reading";
   doc["temp"]     = (float)((int)(temperature * 10 + 0.5)) / 10.0; // 1 dp
   doc["humidity"] = (float)((int)(humidity    * 10 + 0.5)) / 10.0; // 1 dp
@@ -127,6 +181,9 @@ void readAndSendSensor(unsigned long ts) {
 
   serializeJson(doc, Serial);
   Serial.println();  // newline delimiter
+
+  // Mirror the readings and the current fan state on the LCD
+  lcd.update(temperature, humidity, fanOn, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +223,7 @@ void processSerialInput() {
 //   Anything else is rejected with ok:false.
 // ---------------------------------------------------------------------------
 void handleCommand(const char* json, uint8_t len) {
-  StaticJsonDocument<64> doc;
+  JSON_DOC(64) doc;
   DeserializationError err = deserializeJson(doc, json, len);
 
   if (err) {
@@ -198,7 +255,7 @@ void handleCommand(const char* json, uint8_t len) {
   }
 
   // Build and send acknowledgement
-  StaticJsonDocument<96> ack;
+  JSON_DOC(96) ack;
   ack["type"] = "ack";
   ack["cmd"]  = cmd;
   ack["ok"]   = ok;
@@ -213,6 +270,13 @@ void handleCommand(const char* json, uint8_t len) {
 //   closing the normally-open contact and completing the fan circuit.
 // ---------------------------------------------------------------------------
 void setFan(bool on) {
+  bool changed = (fanOn != on);
+
   fanOn = on;
   digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+
+  // Keep the LCD fan row in step with the relay state
+  if (changed) {
+    lcd.refreshFanState(fanOn);
+  }
 }

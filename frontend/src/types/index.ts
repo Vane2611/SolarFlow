@@ -132,4 +132,6 @@ export interface DeviceStatus {
   last_error: string | null;
   firmware_version: string | null;
   uptime_seconds: number | null;
+  last_command: string | null;
+  last_command_at: string | null;
 }

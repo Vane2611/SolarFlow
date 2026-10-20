@@ -95,6 +95,18 @@ export function DeviceHealthCard({ status, loading }: DeviceHealthProps) {
           </div>
         )}
 
+        {/* Last command sent to the relay */}
+        {status.last_command !== null && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+              Last Command
+            </span>
+            <code style={{ fontSize: 13, background: 'var(--color-bg)', padding: '2px 6px', borderRadius: 4 }}>
+              {status.last_command}
+            </code>
+          </div>
+        )}
+
         {/* Last reading */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
           <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-secondary)' }}>

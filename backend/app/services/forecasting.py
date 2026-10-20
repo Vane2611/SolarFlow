@@ -22,7 +22,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-from app.models import ForecastRecord, SensorReading
+from app.models import DataSource, ForecastRecord, SensorReading
 
 logger = logging.getLogger(__name__)
 
@@ -319,12 +319,25 @@ class ForecastingService:
         use_synthetic = True
 
         if db is not None:
-            readings = (
+            # Readings captured from real hardware are preferred; when there
+            # are not enough of them yet, fall back to any readings stored
+            # (simulation mode) and finally to generated data.
+            real_readings = (
                 db.query(SensorReading)
+                .filter(SensorReading.data_source == DataSource.real)
                 .order_by(SensorReading.timestamp.asc())
                 .all()
             )
-            if len(readings) >= _MIN_REAL_READINGS:
+            if len(real_readings) >= _MIN_REAL_READINGS:
+                candidates = real_readings
+            else:
+                candidates = (
+                    db.query(SensorReading)
+                    .order_by(SensorReading.timestamp.asc())
+                    .all()
+                )
+
+            if len(candidates) >= _MIN_REAL_READINGS:
                 df = pd.DataFrame(
                     [
                         {
@@ -332,12 +345,12 @@ class ForecastingService:
                             "temperature_c": r.temperature_c,
                             "humidity_pct": r.humidity_pct,
                         }
-                        for r in readings
+                        for r in candidates
                     ]
                 )
                 use_synthetic = False
                 logger.info(
-                    "Training on %d real readings.", len(readings)
+                    "Training on %d stored readings.", len(candidates)
                 )
 
         if df is None:

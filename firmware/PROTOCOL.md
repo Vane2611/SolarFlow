@@ -1,8 +1,8 @@
 # SolarFlow Hardware Communication Protocol
 
 This document describes the serial protocol between the SolarFlow backend
-and the Arduino sensor node, the wiring of the DHT22 sensor and relay
-module, and the safety requirements for the fan circuit.
+and the Arduino sensor node, the wiring of the DHT22 sensor, the 16x2 LCD
+and the relay module, and the safety requirements for the fan circuit.
 
 ---
 
@@ -126,16 +126,18 @@ Power on
 Arduino runs setup()
    │  pinMode(RELAY_PIN, OUTPUT)
    │  setFan(false)          ← fan OFF for safety
+   │  delay(100)             ← HD44780 settle time
+   │  lcd.begin()            ← LCD shows the splash screen
    │  dht.begin()
    │  delay(2000)            ← DHT22 stabilisation
    │
    ▼
-Arduino sends: {"type":"startup","version":"1.0.0"}
+Arduino sends: {"type":"startup","version":"1.1.0"}
    │
    ▼
 Arduino enters loop():
-   ├─ Every 5 s → read DHT22 → send {"type":"reading",...}
-   └─ Any time  → receive {"cmd":"..."} → execute → send {"type":"ack",...}
+   ├─ Every 5 s → read DHT22 → update LCD → send {"type":"reading",...}
+   └─ Any time  → receive {"cmd":"..."} → execute → update LCD → send {"type":"ack",...}
 ```
 
 The host should wait for the `startup` message (or a 3-second timeout)
@@ -174,7 +176,7 @@ desired fan state after reconnecting.
                       │                             5V  ○─┐
                       │                             GND ○─┤
                       │                                  │
-       DHT22          │                                  │
+       DHT22           │                                  │
    ┌──────────┐        │     ┌─────────────────────────┐  │
    │  1  VCC  ├────────┼─────┤ 3.3V or 5V (see note)   │  │
    │  2  DATA ├──┐     │     └─────────────────────────┘  │
@@ -183,7 +185,7 @@ desired fan state after reconnecting.
    └──────────┘  │     │                                  │
                  └─────┤ Pin 2 (digital input)             │
                  │     │                                  │
-           10 kΩ │     └─────────────────────────────────┘
+         10 kΩ │     └─────────────────────────────────┘
                  │
                 3.3V or 5V (same rail as DHT22 VCC)
 
@@ -195,6 +197,26 @@ desired fan state after reconnecting.
    │ COM ─────────┼────────── Fan +            │
    │ NO  ─────────┼────────── Fan -  ──────────┤
    └──────────────┘            Fan negative to PSU -
+
+    16x2 LCD (4-bit parallel)        Arduino Uno
+   ┌────────────────────────┐      ┌────────────────────────┐
+   │ 1  VCC ────────────────┼──────┤ 5V                     │
+   │ 2  GND ────────────────┼──────┤ GND                    │
+   │ 3  VO  ────────────────┼──────┤ GND                    │
+   │ 4  RS  ────────────────┼──────┤ Pin 12                │
+   │ 5  RW  ────────────────┼──────┤ GND                    │
+   │ 6  E   ────────────────┼──────┤ Pin 11                │
+   │ 7  D0  ────────────────┼──────┤ (not used)            │
+   │ 8  D1  ────────────────┼──────┤ (not used)            │
+   │ 9  D2  ────────────────┼──────┤ (not used)            │
+   │ 10 D3  ────────────────┼──────┤ (not used)            │
+   │ 11 D4  ────────────────┼──────┤ Pin 5                 │
+   │ 12 D5  ────────────────┼──────┤ Pin 4                 │
+   │ 13 D6  ────────────────┼──────┤ Pin 3                 │
+   │ 14 D7  ────────────────┼──────┤ Pin 6                 │
+   │ 15 A   ────────────────┼──────┤ 5V (backlight, +LED)  │
+   │ 16 K   ────────────────┼──────┤ GND (backlight, -LED) │
+   └────────────────────────┘      └────────────────────────┘
 ```
 
 **Component values:**
@@ -205,10 +227,58 @@ desired fan state after reconnecting.
 | Relay module          | 5 V coil, rated ≥ fan operating voltage |
 | Fan                   | 5–12 V DC brushless, ≤ relay contact rating |
 | External PSU          | Rated for fan current + 10 % margin  |
+| LCD                   | 16x2 character, HD44780-compatible, 4-bit parallel |
 
 ---
 
-## 7. 5V relay module compatibility
+## 7. LCD display
+
+The node drives a 16x2 character LCD in 4-bit parallel mode through the
+standard `LiquidCrystal` library (bundled with the Arduino IDE).  The
+display mirrors the live readings so an operator can check conditions
+without opening the web dashboard.
+
+```
+┌────────────────┐
+│T:25.4°C H:68.2%│   Row 0 — temperature and humidity
+│FAN:ON  OK      │   Row 1 — fan state and status token
+└────────────────┘
+```
+
+### 7.1 Row layout
+
+| Row | Content                                                       |
+|-----|---------------------------------------------------------------|
+| 0   | `T:<temperature>°C H:<humidity>%`                             |
+| 1   | `FAN:<ON \| OFF> <status>`                                    |
+
+The degree sign is a custom character written into CGRAM slot 0.  Values
+are shown with one decimal place; temperatures below −9.9 °C or at/above
+100 °C, and humidity at/above 100 %, drop the decimal so the row always
+fits the 16-column width.  A failed sensor read shows `--.-` in both
+value fields.
+
+### 7.2 Status tokens
+
+| Token  | Meaning                                                          |
+|--------|------------------------------------------------------------------|
+| `OK`   | Readings are healthy and below the configured thresholds         |
+| `WARN` | Temperature ≥ 30 °C or humidity ≥ 85 % (see `LCD_TEMP_WARN_C`)  |
+| `ERR`  | The last DHT22 read failed — values show as `--.-`               |
+
+### 7.3 Update behaviour
+
+- Both rows are refreshed after every successful DHT22 read (every 5 s).
+- Row 1 alone is refreshed whenever the relay state changes, so the fan
+  state on the LCD is correct immediately after a command arrives.
+- Rows are only rewritten when their content actually changes, which
+  avoids the flicker a raw HD44780 would otherwise show.
+- The display shows the node's own sensor readings and relay state.  It
+  is a **display, not a sensor** — it contributes no data to the backend.
+
+---
+
+## 8. 5V relay module compatibility
 
 - Most "5V relay modules" sold for Arduino include an optocoupler on the
   input side, allowing the Arduino 5 V logic level to drive the coil
@@ -223,9 +293,9 @@ desired fan state after reconnecting.
 
 ---
 
-## 8. Safety notes
+## 9. Safety notes
 
-### 8.1 Flyback diode
+### 9.1 Flyback diode
 
 The fan motor is an inductive load.  When the relay contact opens, the
 collapsing magnetic field in the motor windings generates a voltage spike
@@ -244,7 +314,7 @@ terminals, cathode toward the positive rail.**
      GND  ──┴──────── Fan −
 ```
 
-### 8.2 Fan power supply
+### 9.2 Fan power supply
 
 - Never power the fan from the Arduino 5 V pin.  The Uno regulator is
   rated for approximately 500 mA total; a brushless fan may draw 200–
@@ -253,7 +323,7 @@ terminals, cathode toward the positive rail.**
   stall current plus a 25 % safety margin.
 - Connect the external PSU GND to Arduino GND (common ground reference).
 
-### 8.3 Isolation
+### 9.3 Isolation
 
 If using a mains-voltage fan, the relay module must be rated for mains
 voltage (look for "250 V AC / 10 A" on the relay body).  Keep all mains
@@ -263,16 +333,16 @@ requires a qualified electrician and is outside the scope of this project.
 
 ---
 
-## 9. Python host-side integration
+## 10. Python host-side integration
 
 The SolarFlow backend connects via `pyserial`.  Relevant config variables
 (set in `backend/.env`):
 
 ```
+SIMULATION_MODE=false     # Set to false to read live DHT22 samples
 SERIAL_PORT=COM3          # Windows — adjust to your port
 # SERIAL_PORT=/dev/ttyUSB0  # Linux / macOS
 SERIAL_BAUD=9600
-SIMULATION_MODE=false     # Set to false to enable real hardware
 ```
 
 The `HardwareInterface` class in `backend/app/services/hardware.py` handles
@@ -280,3 +350,20 @@ connection, command dispatch, and response parsing.  Only commands in
 `ALLOWED_COMMANDS = frozenset({"fan_on", "fan_off", "noop"})` are ever
 sent to the serial port; all other strings raise `ValueError` before any
 I/O occurs.
+
+### 10.1 Reading ingestion
+
+A background thread owns the serial port.  It writes queued commands and
+reads incoming lines, so the host never touches the port concurrently.
+Incoming `{"type":"reading",...}` messages are buffered and handed to the
+scheduler tick, which stores each sample as a `SensorReading` row with
+`data_source = "real"`.
+
+Partial lines are buffered until their terminating newline arrives, so a
+read timeout can never split a JSON message.  A command is acknowledged by
+the matching `{"type":"ack",...}` message; if none arrives within two
+seconds the command is reported as failed and the last known fan state is
+left untouched.
+
+If the port cannot be opened the backend logs a warning and keeps
+running on simulated readings.
