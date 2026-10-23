@@ -1,5 +1,6 @@
 import type {
   Alert,
+  AdvisoryResponse,
   AnalyticsSnapshot,
   AnalyticsSummaryResponse,
   ControlModeRequest,
@@ -74,4 +75,8 @@ export function getAnalyticsComparison(hours = 24): Promise<AnalyticsSnapshot[]>
 
 export function getAnalyticsSummary(hours = 24): Promise<AnalyticsSummaryResponse> {
   return apiFetch<AnalyticsSummaryResponse>(`/api/analytics/summary?hours=${hours}`);
+}
+
+export function getAdvisory(): Promise<AdvisoryResponse> {
+  return apiFetch<AdvisoryResponse>('/api/advisory');
 }

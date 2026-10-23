@@ -45,6 +45,15 @@ def test_alerts_returns_list() -> None:
     assert isinstance(response.json(), list)
 
 
+def test_advisory_returns_recommendations() -> None:
+    response = client.get("/api/advisory")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["greenhouse_id"] == "greenhouse-01"
+    assert data["recommendations"]
+    assert {"title", "action", "reason", "priority"} <= set(data["recommendations"][0])
+
+
 def test_control_mode_get() -> None:
     response = client.get("/api/control/mode")
     assert response.status_code == 200

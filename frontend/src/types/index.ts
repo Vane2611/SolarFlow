@@ -135,3 +135,29 @@ export interface DeviceStatus {
   last_command: string | null;
   last_command_at: string | null;
 }
+
+export type AdvisoryPriority = 'urgent' | 'high' | 'medium' | 'low';
+export type AdvisoryCategory =
+  | 'temperature'
+  | 'humidity'
+  | 'ventilation'
+  | 'monitoring'
+  | 'general';
+
+export interface AdvisoryRecommendation {
+  id: string;
+  priority: AdvisoryPriority;
+  category: AdvisoryCategory;
+  title: string;
+  action: string;
+  reason: string;
+  confidence: number;
+}
+
+export interface AdvisoryResponse {
+  greenhouse_id: string;
+  generated_at: string;
+  summary: string;
+  recommendations: AdvisoryRecommendation[];
+  data_basis: string[];
+}

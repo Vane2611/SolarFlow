@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import SessionLocal, create_all
 from app.models import DataSource, SensorReading
-from app.routers import alerts, analytics, control, devices, predictions, readings
+from app.routers import advisory, alerts, analytics, control, devices, predictions, readings
 from app.schemas import HealthResponse
 from app.services.hardware import hardware_interface
 
@@ -387,6 +387,7 @@ app.include_router(alerts.router, prefix="/api")
 app.include_router(control.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(devices.router, prefix="/api")
+app.include_router(advisory.router, prefix="/api")
 
 # ---------------------------------------------------------------------------
 # Health endpoint

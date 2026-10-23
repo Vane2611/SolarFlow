@@ -273,6 +273,28 @@ class HealthResponse(BaseModel):
     scheduler_ok: bool = True
 
 
+class AdvisoryRecommendation(BaseModel):
+    """One actionable greenhouse-management recommendation."""
+
+    id: str
+    priority: Literal["urgent", "high", "medium", "low"]
+    category: Literal["temperature", "humidity", "ventilation", "monitoring", "general"]
+    title: str
+    action: str
+    reason: str
+    confidence: float
+
+
+class AdvisoryResponse(BaseModel):
+    """Current recommendations generated from greenhouse telemetry."""
+
+    greenhouse_id: str
+    generated_at: datetime
+    summary: str
+    recommendations: list[AdvisoryRecommendation]
+    data_basis: list[str]
+
+
 class DeviceStatusResponse(BaseModel):
     greenhouse_id: str
     simulation_mode: bool

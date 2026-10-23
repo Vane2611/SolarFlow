@@ -8,6 +8,7 @@ import { Alerts } from './pages/Alerts';
 import { Automation } from './pages/Automation';
 import { Analytics } from './pages/Analytics';
 import { DeviceHealthPage } from './pages/DeviceHealth';
+import { Advisory } from './pages/Advisory';
 import { usePolling } from './hooks/usePolling';
 import { getHealth, getDeviceStatus } from './api/client';
 import { useCallback } from 'react';
@@ -20,6 +21,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/automation': 'Automation',
   '/analytics': 'Analytics',
   '/devices': 'Device Health',
+  '/advisory': 'Greenhouse Advisor',
 };
 
 function AppLayout() {
@@ -52,6 +54,7 @@ function AppLayout() {
             <Route path="/automation" element={<Automation />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/devices" element={<DeviceHealthPage />} />
+            <Route path="/advisory" element={<Advisory />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

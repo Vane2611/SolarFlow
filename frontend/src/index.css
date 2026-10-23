@@ -200,6 +200,38 @@ button {
   font-style: italic;
 }
 
+/* Advisory */
+.advisory-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.advisory-intro p { color: var(--color-text-secondary); }
+.advisory-intro-icon { color: #a16207; background: var(--color-warning-light); padding: 10px; border-radius: 50%; display: flex; }
+.advisory-intro > svg:last-child { margin-left: auto; color: var(--color-text-muted); }
+.advisory-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--border-radius);
+  background: var(--color-success-light);
+  color: #166534;
+  font-weight: 600;
+}
+.advisory-list { display: grid; gap: 12px; }
+.advisory-card { background: var(--color-surface); border: 1px solid var(--color-border); border-left: 4px solid var(--color-success); border-radius: var(--border-radius); padding: 18px; }
+.advisory-urgent { border-left-color: var(--color-danger); }
+.advisory-high { border-left-color: var(--color-warning); }
+.advisory-medium { border-left-color: var(--color-info); }
+.advisory-card-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.advisory-card h2 { font-size: 16px; margin-top: 5px; }
+.advisory-priority { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-secondary); }
+.advisory-action { margin: 14px 0 8px; line-height: 1.5; }
+.advisory-basis { line-height: 1.8; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* Responsive */
 @media (max-width: 768px) {
   .grid-2, .grid-3, .grid-4 {

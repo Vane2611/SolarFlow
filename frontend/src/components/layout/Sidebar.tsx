@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Leaf,
+  Lightbulb,
 } from 'lucide-react';
 
 interface NavItem {
@@ -23,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Overview', icon: <LayoutDashboard size={20} /> },
   { to: '/monitoring', label: 'Live Monitoring', icon: <Activity size={20} /> },
   { to: '/predictions', label: 'Predictions', icon: <TrendingUp size={20} /> },
+  { to: '/advisory', label: 'Advisor', icon: <Lightbulb size={20} /> },
   { to: '/alerts', label: 'Alerts', icon: <Bell size={20} /> },
   { to: '/automation', label: 'Automation', icon: <Settings size={20} /> },
   { to: '/analytics', label: 'Analytics', icon: <BarChart2 size={20} /> },
